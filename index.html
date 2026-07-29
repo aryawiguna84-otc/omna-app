@@ -669,7 +669,28 @@ function renderImportBanner2025(){
 }
 async function saveCandidates(){
   try{
-    await window.storage.set('candidates', JSON.stringify(state.candidates), true);
+    // Merge-safe write: this app is shared across a team with no live sync,
+    // so each browser tab only holds a snapshot of candidates from whenever
+    // it last loaded. Writing that whole snapshot back on every edit would
+    // silently overwrite anyone else's (or another tab's) more recent
+    // changes to OTHER candidates with this tab's stale copy \u2014 which is
+    // exactly the "edits revert to the original imported data" symptom.
+    // Fix: when a specific candidate is being edited, pull the latest data
+    // from the server first, patch in just that one candidate, and write
+    // the merged result back. Every other candidate keeps whatever is
+    // freshest on the server instead of being clobbered by this tab.
+    const active = getActive();
+    if(active){
+      const latest = await window.storage.get('candidates', true);
+      let serverArr = [];
+      try{ serverArr = latest && latest.value ? JSON.parse(latest.value) : []; }catch(e2){ serverArr = state.candidates; }
+      const idx = serverArr.findIndex(x=>x.id === active.id);
+      if(idx === -1) serverArr.push(active); else serverArr[idx] = active;
+      await window.storage.set('candidates', JSON.stringify(serverArr), true);
+      state.candidates = serverArr;
+    } else {
+      await window.storage.set('candidates', JSON.stringify(state.candidates), true);
+    }
     return true;
   }catch(e){ showToast('Failed to save. Please try again.'); return false; }
 }
