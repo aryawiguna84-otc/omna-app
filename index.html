@@ -187,6 +187,7 @@
   }
   .status-newhire{background:var(--teal-bg); color:var(--teal);}
   .status-repeater{background:var(--amber-bg); color:var(--amber);}
+  .status-resign{background:var(--red-bg); color:var(--red);}
   .filters{display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap;}
   select, .filters input{
     font-family:inherit; font-size:13px; padding:7px 10px; border:1px solid var(--line);
@@ -669,16 +670,6 @@ function renderImportBanner2025(){
 }
 async function saveCandidates(){
   try{
-    // Merge-safe write: this app is shared across a team with no live sync,
-    // so each browser tab only holds a snapshot of candidates from whenever
-    // it last loaded. Writing that whole snapshot back on every edit would
-    // silently overwrite anyone else's (or another tab's) more recent
-    // changes to OTHER candidates with this tab's stale copy \u2014 which is
-    // exactly the "edits revert to the original imported data" symptom.
-    // Fix: when a specific candidate is being edited, pull the latest data
-    // from the server first, patch in just that one candidate, and write
-    // the merged result back. Every other candidate keeps whatever is
-    // freshest on the server instead of being clobbered by this tab.
     const active = getActive();
     if(active){
       const latest = await window.storage.get('candidates', true);
@@ -885,6 +876,7 @@ function renderDashboard(corridor){
   const activeCount = list.filter(c=>c.stage!==lastStage).length;
   const newHireCount = list.filter(c=>c.candidateStatus==='New Hire').length;
   const repeaterCount = list.filter(c=>c.candidateStatus==='Repeater').length;
+  const resignCount = list.filter(c=>c.candidateStatus==='Resign').length;
 
   let deadlines = [];
   list.forEach(c=>{
@@ -931,6 +923,7 @@ function renderDashboard(corridor){
     placementCard+
     '<div class="stat-card"><div class="num">'+newHireCount+'</div><div class="label">New Hire</div></div>'+
     '<div class="stat-card"><div class="num">'+repeaterCount+'</div><div class="label">Repeater</div></div>'+
+    '<div class="stat-card"><div class="num">'+resignCount+'</div><div class="label">Resign</div></div>'+
     '<div class="stat-card"><div class="num">'+deadlines.filter(d=>daysUntil(d.date)<0).length+'</div><div class="label">Expired documents</div></div>'+
     '</div>'+
     '<div class="panel"><div class="panel-head"><h3>Upcoming document expirations</h3></div><div class="panel-body">'+deadlineRows+'</div></div>'+
@@ -972,6 +965,7 @@ function renderTable(){
       let statusCell = '<span style="color:var(--ink-soft);">—</span>';
       if(c.candidateStatus === 'New Hire') statusCell = '<span class="status-badge status-newhire">New Hire</span>';
       else if(c.candidateStatus === 'Repeater') statusCell = '<span class="status-badge status-repeater">Repeater</span>';
+      else if(c.candidateStatus === 'Resign') statusCell = '<span class="status-badge status-resign">Resign</span>';
       return '<tr class="row-clickable" onclick="openDetail(\''+c.id+'\')">'+
         '<td class="id-tag">'+candidateIdLabel(c)+'</td>'+
         '<td style="font-weight:500;">'+escapeHtml(c.name)+'</td>'+
