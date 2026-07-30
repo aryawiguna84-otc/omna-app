@@ -947,7 +947,8 @@ function renderTable(){
   ).join('');
   const statusOptions = '<option value="">All statuses</option>'+
     '<option value="New Hire"'+(state.filterStatus==='New Hire'?' selected':'')+'>New Hire</option>'+
-    '<option value="Repeater"'+(state.filterStatus==='Repeater'?' selected':'')+'>Repeater</option>';
+    '<option value="Repeater"'+(state.filterStatus==='Repeater'?' selected':'')+'>Repeater</option>'+
+    '<option value="Resign"'+(state.filterStatus==='Resign'?' selected':'')+'>Resign</option>';
 
   let rows;
   if(list.length===0){
