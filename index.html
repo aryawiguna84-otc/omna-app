@@ -1226,7 +1226,8 @@ function exportCSV(){
   otherFields.forEach(f=>headers.push(f.label));
   headers.push('Documents','Payments','Latest Note','Created At');
 
-  const rows = state.candidates.slice().sort((a,b)=>a.seq-b.seq).map(c=>{
+  const exportScope = state.candidates.filter(c=>!state.filterCorridor || c.corridor === state.filterCorridor);
+  const rows = exportScope.slice().sort((a,b)=>a.seq-b.seq).map(c=>{
     const docsSummary = (c.documents||[]).map(d=>d.name+':'+(d.done?'done':'pending')+(d.deadline?(' ('+d.deadline+')'):'')).join('; ');
     const paysSummary = (c.payments||[]).map(p=>p.desc+':'+p.status+' Rp'+(p.amount||0)).join('; ');
     const latestNote = (c.notes && c.notes.length) ? c.notes[c.notes.length-1].text : '';
@@ -1255,8 +1256,9 @@ function exportCSV(){
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Candidates');
   const today = new Date().toISOString().slice(0,10);
-  XLSX.writeFile(wb, 'omna-candidates-' + today + '.xlsx');
-  showToast('Export downloaded (' + rows.length + ' candidates).');
+  const scopeSlug = state.filterCorridor ? '-' + state.filterCorridor.replace(/[^a-zA-Z0-9]+/g,'-') : '';
+  XLSX.writeFile(wb, 'omna-candidates' + scopeSlug + '-' + today + '.xlsx');
+  showToast('Export downloaded (' + rows.length + ' candidates' + (state.filterCorridor ? ' \u2014 ' + state.filterCorridor : '') + ').');
 }
 
 /* ---------- Settings: stages ---------- */
