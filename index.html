@@ -2268,15 +2268,23 @@ function openAddPartner(){
     '</div>'+
     '<div class="field"><label>Email</label><input id="np-email" type="email" placeholder="name@company.com"></div>'+
     '<div class="field"><label>Address</label><textarea id="np-address" placeholder="Company address"></textarea></div>'+
+    '<div class="field-row">'+
+    '<div class="field"><label>Initial agreement title (optional)</label><input id="np-agr-title" placeholder="e.g. MOU"></div>'+
+    '<div class="field"><label>&#128206; Upload file (optional)</label><input id="np-agr-file" type="file"></div>'+
+    '</div>'+
     '<div class="modal-actions">'+
     '<button class="btn" onclick="closeModal()">Cancel</button>'+
     '<button class="btn btn-primary" onclick="submitAddPartner()">Save partner</button>'+
     '</div>';
   document.getElementById('modal-overlay').classList.add('open');
 }
-function submitAddPartner(){
+async function submitAddPartner(){
   const name = document.getElementById('np-name').value.trim();
   if(!name){ showToast('Company / agent name is required.'); return; }
+  const agrTitle = document.getElementById('np-agr-title').value.trim();
+  const fileInput = document.getElementById('np-agr-file');
+  const file = fileInput && fileInput.files && fileInput.files[0];
+  if(file && file.size > 4*1024*1024){ showToast('File is too large (max 4 MB).'); return; }
   const p = {
     id: uid('p'),
     name,
@@ -2289,6 +2297,14 @@ function submitAddPartner(){
     agreements: [],
     createdAt: new Date().toISOString().slice(0,10)
   };
+  if(file){
+    try{
+      const dataUrl = await readFileAsDataUrl(file);
+      const newFile = { id: uid('f'), name: file.name, size: file.size, type: file.type, dataUrl, uploadedAt: new Date().toISOString().slice(0,10) };
+      await window.storage.set('files:partner:'+p.id, JSON.stringify([newFile]), true);
+      p.agreements.push({id:uid('agr'), title: agrTitle || 'Agreement', signedDate:null, expiryDate:null, fileId:newFile.id});
+    }catch(e){ showToast('Could not attach the file, but the partner was saved.'); }
+  }
   state.partners.push(p);
   savePartners(p);
   closeModal();
@@ -2531,16 +2547,20 @@ function openAddDocRecord(){
     '<div class="field"><label>Issue date</label><input id="nd-issue" type="date"></div>'+
     '<div class="field"><label>Expiry date</label><input id="nd-expiry" type="date"></div>'+
     '</div>'+
+    '<div class="field"><label>&#128206; Upload file (optional)</label><input id="nd-file" type="file"></div>'+
     '<div class="modal-actions">'+
     '<button class="btn" onclick="closeModal()">Cancel</button>'+
     '<button class="btn btn-primary" onclick="submitAddDocRecord()">Save document</button>'+
     '</div>';
   document.getElementById('modal-overlay').classList.add('open');
 }
-function submitAddDocRecord(){
+async function submitAddDocRecord(){
   const type = document.getElementById('nd-type').value;
   const title = document.getElementById('nd-title').value.trim();
   if(!title){ showToast('Title / reference is required.'); return; }
+  const fileInput = document.getElementById('nd-file');
+  const file = fileInput && fileInput.files && fileInput.files[0];
+  if(file && file.size > 4*1024*1024){ showToast('File is too large (max 4 MB).'); return; }
   const d = {
     id: uid('doc'),
     type,
@@ -2551,6 +2571,14 @@ function submitAddDocRecord(){
     fileId: null,
     createdAt: new Date().toISOString().slice(0,10)
   };
+  if(file){
+    try{
+      const dataUrl = await readFileAsDataUrl(file);
+      const newFile = { id: uid('f'), name: file.name, size: file.size, type: file.type, dataUrl, uploadedAt: new Date().toISOString().slice(0,10) };
+      await window.storage.set('files:docrecord:'+d.id, JSON.stringify([newFile]), true);
+      d.fileId = newFile.id;
+    }catch(e){ showToast('Could not attach the file, but the document was saved.'); }
+  }
   state.documents.push(d);
   saveDocuments(d);
   closeModal();
