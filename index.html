@@ -1054,8 +1054,9 @@ function renderPartnersTable(){
     '</tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 function renderAnalytics(){
-  const total = state.candidates.length;
-  const stageCounts = state.stages.map(s => state.candidates.filter(c=>c.stage===s).length);
+  const scoped = state.filterCorridor ? state.candidates.filter(c=>c.corridor===state.filterCorridor) : state.candidates;
+  const total = scoped.length;
+  const stageCounts = state.stages.map(s => scoped.filter(c=>c.stage===s).length);
   const maxCount = Math.max(1, ...stageCounts);
   const funnelHtml = state.stages.map((s,i)=>{
     const count = stageCounts[i];
@@ -1068,14 +1069,14 @@ function renderAnalytics(){
       '</div>';
   }).join('');
 
-  const deniedCount = state.candidates.filter(c=>c.stage==='Visa Denial').length;
-  const resignedCount = state.candidates.filter(c=>c.candidateStatus==='Resign').length;
+  const deniedCount = scoped.filter(c=>c.stage==='Visa Denial').length;
+  const resignedCount = scoped.filter(c=>c.candidateStatus==='Resign').length;
   const dropOffPct = total ? Math.round(((deniedCount+resignedCount) / total) * 100) : 0;
-  const completedCount = state.candidates.filter(c=>c.stage==='Completed').length;
+  const completedCount = scoped.filter(c=>c.stage==='Completed').length;
   const completionPct = total ? Math.round((completedCount / total) * 100) : 0;
 
   const monthMap = {};
-  state.candidates.forEach(c=>{
+  scoped.forEach(c=>{
     if(!c.createdAt) return;
     const m = c.createdAt.slice(0,7);
     monthMap[m] = (monthMap[m]||0) + 1;
@@ -1093,7 +1094,12 @@ function renderAnalytics(){
       '</div>';
   }).join('') : '<div class="empty-row">Not enough data yet.</div>';
 
-  return '<div class="eyebrow">Placement funnel &amp; conversion</div>'+
+  const corridorOptions = ['<option value="">All placements</option>'].concat(
+    state.corridors.map(c=>'<option value="'+escapeAttr(c)+'"'+(state.filterCorridor===c?' selected':'')+'>'+c+'</option>')
+  ).join('');
+
+  return '<div class="filters"><select onchange="state.filterCorridor=this.value; render();">'+corridorOptions+'</select></div>'+
+    '<div class="eyebrow">'+(state.filterCorridor ? 'Placement funnel &amp; conversion — '+escapeHtml(state.filterCorridor) : 'Placement funnel &amp; conversion — all placements')+'</div>'+
     '<div class="stat-grid">'+
     '<div class="stat-card"><div class="num">'+total+'</div><div class="label">Total candidates</div></div>'+
     '<div class="stat-card"><div class="num">'+completionPct+'%</div><div class="label">Completion rate</div></div>'+
