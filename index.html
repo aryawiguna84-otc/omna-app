@@ -188,6 +188,12 @@
   .status-newhire{background:var(--teal-bg); color:var(--teal);}
   .status-repeater{background:var(--amber-bg); color:var(--amber);}
   .status-resign{background:var(--red-bg); color:var(--red);}
+  .funnel-row{display:flex; align-items:center; gap:10px; padding:6px 0;}
+  .funnel-label{width:150px; font-size:12.5px; color:var(--ink-soft); flex-shrink:0;}
+  .funnel-track{flex:1; height:14px; background:var(--paper); border-radius:7px; overflow:hidden;}
+  .funnel-fill{height:100%; background:var(--teal); border-radius:7px;}
+  .funnel-fill-red{background:var(--red);}
+  .funnel-count{width:36px; text-align:right; font-size:12.5px; font-weight:600; color:var(--ink); flex-shrink:0;}
   .filters{display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap;}
   select, .filters input{
     font-family:inherit; font-size:13px; padding:7px 10px; border:1px solid var(--line);
@@ -373,6 +379,15 @@
       </div>
     </div>
     <div class="nav-section">
+      <div class="nav-item" data-view="partners" onclick="setView('partners')">
+        <span>Partners</span>
+        <span class="count" id="count-partners">0</span>
+      </div>
+      <div class="nav-item" data-view="analytics" onclick="setView('analytics')">
+        <span>Analytics</span>
+      </div>
+    </div>
+    <div class="nav-section">
       <div class="nav-item" data-view="settings" onclick="setView('settings')">
         <span>⚙ Settings</span>
       </div>
@@ -397,9 +412,9 @@
         <input type="text" id="global-search" placeholder="Search candidate name..." oninput="onGlobalSearch()">
       </div>
       <input type="file" id="import-file-input" accept=".csv,.xlsx,.xls" style="display:none;" onchange="handleImportFile(event)">
-      <button class="btn" onclick="triggerImportFile()">Import</button>
-      <button class="btn" onclick="exportCSV()">Export</button>
-      <button class="btn btn-primary" onclick="openAddCandidate()">+ New candidate</button>
+      <button class="btn" id="btn-import" onclick="triggerImportFile()">Import</button>
+      <button class="btn" id="btn-export" onclick="exportCSV()">Export</button>
+      <button class="btn btn-primary" id="btn-new-primary" onclick="openAddCandidate()">+ New candidate</button>
     </div>
     <div class="content" id="content">
       <div class="loading-state">Loading data...</div>
@@ -546,7 +561,9 @@ let state = {
   activeCandidateId: null,
   activeFiles: [],
   showImportBanner: false,
-  showImportBanner2025: false
+  showImportBanner2025: false,
+  partners: [],
+  activePartnerId: null
 };
 
 function uid(prefix){
@@ -610,6 +627,10 @@ async function loadData(){
     const mig2 = await window.storage.get('migrationImported2025', true);
     state.showImportBanner2025 = !(mig2 && mig2.value === 'true');
   }catch(e){ state.showImportBanner2025 = true; }
+  try{
+    const pt = await window.storage.get('partners', true);
+    state.partners = pt ? JSON.parse(pt.value) : [];
+  }catch(e){ state.partners = []; }
   render();
 }
 async function importMigratedCandidates(){
@@ -668,9 +689,13 @@ function renderImportBanner2025(){
     '<button class="btn btn-sm btn-primary" onclick="importMigratedCandidates2025()">Import now</button>'+
     '</div></div>';
 }
-async function saveCandidates(){
+async function saveCandidates(recordOverride){
   try{
-    const active = getActive();
+    // recordOverride lets a caller (e.g. adding a brand-new candidate) target
+    // that specific record even if some OTHER candidate's drawer happens to
+    // still be open, so the new record can never be silently dropped by the
+    // merge-safe save below.
+    const active = recordOverride || getActive();
     if(active){
       const latest = await window.storage.get('candidates', true);
       let serverArr = [];
@@ -777,12 +802,27 @@ function render(){
   document.getElementById('page-title').textContent =
     state.view === 'dashboard' ? 'Dashboard' :
     state.view === 'settings' ? 'Settings' :
+    state.view === 'partners' ? 'Partners' :
+    state.view === 'analytics' ? 'Analytics' :
     state.filterCorridor ? 'Placement — ' + state.filterCorridor : 'All candidates';
   const banner = (state.showImportBanner ? renderImportBanner() : '') + (state.showImportBanner2025 ? renderImportBanner2025() : '');
   if(state.view === 'dashboard') el.innerHTML = banner + renderDashboard();
   else if(state.view === 'settings') el.innerHTML = renderSettings();
+  else if(state.view === 'partners') el.innerHTML = renderPartnersTable();
+  else if(state.view === 'analytics') el.innerHTML = renderAnalytics();
   else if(state.filterCorridor) el.innerHTML = banner + renderDashboard(state.filterCorridor) + renderTable();
   else el.innerHTML = banner + renderTable();
+  const btnImport = document.getElementById('btn-import');
+  const btnExport = document.getElementById('btn-export');
+  const btnNew = document.getElementById('btn-new-primary');
+  const dataView = (state.view === 'partners' || state.view === 'analytics');
+  if(btnImport) btnImport.style.display = dataView ? 'none' : '';
+  if(btnExport) btnExport.style.display = dataView ? 'none' : '';
+  if(btnNew){
+    if(state.view === 'analytics'){ btnNew.style.display = 'none'; }
+    else if(state.view === 'partners'){ btnNew.style.display = ''; btnNew.textContent = '+ New partner'; btnNew.onclick = openAddPartner; }
+    else { btnNew.style.display = ''; btnNew.textContent = '+ New candidate'; btnNew.onclick = openAddCandidate; }
+  }
 }
 function renderSettings(){
   const stageRows = state.stages.map((s,i)=>
@@ -859,6 +899,8 @@ function renderSidebar(){
     n.classList.toggle('active', n.dataset.view === state.view && !state.filterCorridor);
   });
   document.getElementById('count-all').textContent = state.candidates.length;
+  const countPartnersEl = document.getElementById('count-partners');
+  if(countPartnersEl) countPartnersEl.textContent = state.partners.length;
   const nav = document.getElementById('corridor-nav');
   nav.innerHTML = state.corridors.map(cor=>{
     const n = state.candidates.filter(c=>c.corridor===cor).length;
@@ -989,6 +1031,80 @@ function renderTable(){
     '</tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 
+function renderPartnersTable(){
+  const list = state.partners.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  let rows;
+  if(list.length === 0){
+    rows = '<tr><td colspan="5"><div class="empty-row">No partner agents or companies yet. Add one to get started.</div></td></tr>';
+  } else {
+    rows = list.map(p=>{
+      const agreementCount = (p.agreements||[]).length;
+      return '<tr class="row-clickable" onclick="openPartnerDetail(\''+p.id+'\')">'+
+        '<td style="font-weight:500;">'+escapeHtml(p.name)+'</td>'+
+        '<td>'+escapeHtml(p.contactPerson||'—')+'</td>'+
+        '<td>'+escapeHtml(p.phone||'—')+'</td>'+
+        '<td>'+escapeHtml(p.corridor||'—')+'</td>'+
+        '<td>'+agreementCount+'</td>'+
+        '</tr>';
+    }).join('');
+  }
+  return '<div class="eyebrow">Partner agents &amp; companies</div>'+
+    '<div class="panel"><table><thead><tr>'+
+    '<th>Company / Agent</th><th>Contact person</th><th>Phone</th><th>Placement</th><th>Agreements</th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+function renderAnalytics(){
+  const total = state.candidates.length;
+  const stageCounts = state.stages.map(s => state.candidates.filter(c=>c.stage===s).length);
+  const maxCount = Math.max(1, ...stageCounts);
+  const funnelHtml = state.stages.map((s,i)=>{
+    const count = stageCounts[i];
+    const pct = Math.round((count / maxCount) * 100);
+    const isDropStage = s === 'Visa Denial';
+    return '<div class="funnel-row">'+
+      '<div class="funnel-label">'+escapeHtml(s)+'</div>'+
+      '<div class="funnel-track"><div class="funnel-fill'+(isDropStage?' funnel-fill-red':'')+'" style="width:'+pct+'%;"></div></div>'+
+      '<div class="funnel-count">'+count+'</div>'+
+      '</div>';
+  }).join('');
+
+  const deniedCount = state.candidates.filter(c=>c.stage==='Visa Denial').length;
+  const resignedCount = state.candidates.filter(c=>c.candidateStatus==='Resign').length;
+  const dropOffPct = total ? Math.round(((deniedCount+resignedCount) / total) * 100) : 0;
+  const completedCount = state.candidates.filter(c=>c.stage==='Completed').length;
+  const completionPct = total ? Math.round((completedCount / total) * 100) : 0;
+
+  const monthMap = {};
+  state.candidates.forEach(c=>{
+    if(!c.createdAt) return;
+    const m = c.createdAt.slice(0,7);
+    monthMap[m] = (monthMap[m]||0) + 1;
+  });
+  const months = Object.keys(monthMap).sort().slice(-12);
+  const maxMonth = Math.max(1, ...months.map(m=>monthMap[m]));
+  const monthHtml = months.length ? months.map(m=>{
+    const count = monthMap[m];
+    const pct = Math.round((count / maxMonth) * 100);
+    const label = new Date(m+'-01T00:00:00').toLocaleDateString('en-GB',{month:'short', year:'2-digit'});
+    return '<div class="funnel-row">'+
+      '<div class="funnel-label">'+label+'</div>'+
+      '<div class="funnel-track"><div class="funnel-fill" style="width:'+pct+'%;"></div></div>'+
+      '<div class="funnel-count">'+count+'</div>'+
+      '</div>';
+  }).join('') : '<div class="empty-row">Not enough data yet.</div>';
+
+  return '<div class="eyebrow">Placement funnel &amp; conversion</div>'+
+    '<div class="stat-grid">'+
+    '<div class="stat-card"><div class="num">'+total+'</div><div class="label">Total candidates</div></div>'+
+    '<div class="stat-card"><div class="num">'+completionPct+'%</div><div class="label">Completion rate</div></div>'+
+    '<div class="stat-card"><div class="num">'+dropOffPct+'%</div><div class="label">Denied / Resigned rate</div></div>'+
+    '<div class="stat-card"><div class="num">'+deniedCount+'</div><div class="label">Visa denials</div></div>'+
+    '</div>'+
+    '<div class="panel"><div class="panel-head"><h3>Candidates by stage</h3></div><div class="panel-body" style="padding:14px 18px;">'+funnelHtml+'</div></div>'+
+    '<div class="panel" style="margin-top:16px;"><div class="panel-head"><h3>New candidates per month</h3></div><div class="panel-body" style="padding:14px 18px;">'+monthHtml+
+    '<div class="file-hint" style="margin-top:8px;">Based on when each candidate was added to the system — not on actual placement completion dates, since those aren\'t tracked yet.</div>'+
+    '</div></div>';
+}
 function escapeHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
@@ -1034,7 +1150,7 @@ function submitAddCandidate(){
     customValues: {}
   };
   state.candidates.push(c);
-  saveCandidates();
+  saveCandidates(c);
   closeModal();
   render();
   showToast('Candidate added.');
@@ -1914,6 +2030,261 @@ function deleteCandidate(){
   closeDrawer();
   render();
   showToast('Candidate deleted.');
+}
+
+/* ---------- Partners ---------- */
+function getActivePartner(){
+  return state.partners.find(p=>p.id===state.activePartnerId);
+}
+async function savePartners(recordOverride){
+  try{
+    const active = recordOverride || getActivePartner();
+    if(active){
+      const latest = await window.storage.get('partners', true);
+      let serverArr = [];
+      try{ serverArr = latest && latest.value ? JSON.parse(latest.value) : []; }catch(e2){ serverArr = state.partners; }
+      const idx = serverArr.findIndex(x=>x.id === active.id);
+      if(idx === -1) serverArr.push(active); else serverArr[idx] = active;
+      await window.storage.set('partners', JSON.stringify(serverArr), true);
+      state.partners = serverArr;
+    } else {
+      await window.storage.set('partners', JSON.stringify(state.partners), true);
+    }
+    return true;
+  }catch(e){ showToast('Failed to save partner. Please try again.'); return false; }
+}
+async function savePartnerNow(ev){
+  const p = getActivePartner(); if(!p) return;
+  const btn = ev && ev.target;
+  if(btn){ btn.disabled = true; btn.textContent = 'Saving...'; }
+  const ok = await savePartners();
+  if(btn){ btn.disabled = false; btn.textContent = 'Save changes'; }
+  if(ok) showToast('Changes saved.');
+}
+function openAddPartner(){
+  const corridorOptions = ['<option value="">Not set</option>'].concat(
+    state.corridors.map(c=>'<option value="'+escapeAttr(c)+'">'+c+'</option>')
+  ).join('');
+  document.getElementById('modal').innerHTML =
+    '<h3>New partner</h3>'+
+    '<div class="field"><label>Company / Agent name</label><input id="np-name" placeholder="Partner company name"></div>'+
+    '<div class="field-row">'+
+    '<div class="field"><label>Contact person</label><input id="np-contact" placeholder="Contact name"></div>'+
+    '<div class="field"><label>Phone</label><input id="np-phone" placeholder="08xx-xxxx-xxxx"></div>'+
+    '</div>'+
+    '<div class="field-row">'+
+    '<div class="field"><label>Email</label><input id="np-email" type="email" placeholder="name@company.com"></div>'+
+    '<div class="field"><label>Placement</label><select id="np-corridor">'+corridorOptions+'</select></div>'+
+    '</div>'+
+    '<div class="field"><label>Address</label><textarea id="np-address" placeholder="Company address"></textarea></div>'+
+    '<div class="modal-actions">'+
+    '<button class="btn" onclick="closeModal()">Cancel</button>'+
+    '<button class="btn btn-primary" onclick="submitAddPartner()">Save partner</button>'+
+    '</div>';
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function submitAddPartner(){
+  const name = document.getElementById('np-name').value.trim();
+  if(!name){ showToast('Company / agent name is required.'); return; }
+  const p = {
+    id: uid('p'),
+    name,
+    contactPerson: document.getElementById('np-contact').value.trim(),
+    phone: document.getElementById('np-phone').value.trim(),
+    email: document.getElementById('np-email').value.trim(),
+    corridor: document.getElementById('np-corridor').value,
+    address: document.getElementById('np-address').value.trim(),
+    agreements: [],
+    createdAt: new Date().toISOString().slice(0,10)
+  };
+  state.partners.push(p);
+  savePartners(p);
+  closeModal();
+  render();
+  showToast('Partner added.');
+}
+async function openPartnerDetail(id){
+  state.activePartnerId = id;
+  state.activeFiles = [];
+  document.getElementById('drawer-overlay').classList.add('open');
+  document.getElementById('drawer').innerHTML = '<div class="loading-state">Loading partner detail...</div>';
+  await loadFilesForActivePartner(id);
+  renderPartnerDrawer();
+}
+function closePartnerDrawer(){
+  document.getElementById('drawer-overlay').classList.remove('open');
+  state.activePartnerId = null;
+  state.activeFiles = [];
+}
+async function loadFilesForActivePartner(id){
+  try{
+    const r = await window.storage.get('files:partner:'+id, true);
+    state.activeFiles = r ? JSON.parse(r.value) : [];
+  }catch(e){
+    state.activeFiles = [];
+  }
+}
+async function saveActivePartnerFiles(){
+  try{
+    await window.storage.set('files:partner:'+state.activePartnerId, JSON.stringify(state.activeFiles), true);
+  }catch(e){
+    showToast('Failed to save file. Please try again.');
+  }
+}
+function updatePartnerField(field, value){
+  const p = getActivePartner(); if(!p) return;
+  p[field] = value;
+  savePartners();
+  render();
+}
+async function addAgreement(){
+  const p = getActivePartner(); if(!p) return;
+  const title = document.getElementById('new-agr-title').value.trim();
+  const expiryDate = document.getElementById('new-agr-date').value;
+  const fileInput = document.getElementById('new-agr-file');
+  const file = fileInput && fileInput.files && fileInput.files[0];
+  if(!title){ showToast('Agreement title is required.'); return; }
+  if(file && file.size > 4*1024*1024){ showToast('File is too large (max 4 MB).'); return; }
+  const agreement = {id:uid('agr'), title, expiryDate: expiryDate || null, fileId:null};
+  try{
+    if(file){
+      const dataUrl = await readFileAsDataUrl(file);
+      const newFile = { id: uid('f'), name: file.name, size: file.size, type: file.type, dataUrl, uploadedAt: new Date().toISOString().slice(0,10) };
+      state.activeFiles = state.activeFiles || [];
+      state.activeFiles.push(newFile);
+      agreement.fileId = newFile.id;
+      await saveActivePartnerFiles();
+    }
+    p.agreements = p.agreements || [];
+    p.agreements.push(agreement);
+    await savePartners();
+    renderPartnerDrawer();
+    render();
+  }catch(e){
+    showToast('Failed to add agreement. Please try again.');
+  }
+}
+function handleAgreementFileUpload(event, agreementId){
+  const input = event.target;
+  const file = input.files && input.files[0];
+  if(!file) return;
+  const MAX_BYTES = 4 * 1024 * 1024;
+  if(file.size > MAX_BYTES){ showToast('File is too large (max 4 MB).'); input.value=''; return; }
+  const reader = new FileReader();
+  reader.onload = async function(){
+    const p = getActivePartner(); if(!p) return;
+    const newFile = {
+      id: uid('f'), name: file.name, size: file.size, type: file.type,
+      dataUrl: reader.result, uploadedAt: new Date().toISOString().slice(0,10)
+    };
+    state.activeFiles = state.activeFiles || [];
+    state.activeFiles.push(newFile);
+    const a = (p.agreements||[]).find(x=>x.id===agreementId);
+    if(a) a.fileId = newFile.id;
+    await saveActivePartnerFiles();
+    await savePartners();
+    renderPartnerDrawer();
+    showToast('File attached.');
+  };
+  reader.onerror = function(){ showToast('Failed to read file.'); };
+  reader.readAsDataURL(file);
+}
+function unlinkAgreementFile(agreementId){
+  const p = getActivePartner(); if(!p) return;
+  const a = (p.agreements||[]).find(x=>x.id===agreementId);
+  if(a){ a.fileId = null; savePartners(); renderPartnerDrawer(); }
+}
+function deleteAgreement(id){
+  const p = getActivePartner(); if(!p) return;
+  p.agreements = (p.agreements||[]).filter(x=>x.id!==id);
+  savePartners();
+  renderPartnerDrawer();
+}
+function deletePartner(){
+  const p = getActivePartner(); if(!p) return;
+  if(!confirm('Delete partner "'+p.name+'"? This action cannot be undone.')) return;
+  state.partners = state.partners.filter(x=>x.id!==p.id);
+  savePartners();
+  try{ window.storage.delete('files:partner:'+p.id, true); }catch(e){}
+  closePartnerDrawer();
+  render();
+  showToast('Partner deleted.');
+}
+function renderPartnerDrawer(){
+  const p = getActivePartner();
+  if(!p){ return; }
+  const corridorOptions = ['<option value="">Not set</option>'].concat(
+    state.corridors.map(cor=>'<option value="'+escapeAttr(cor)+'"'+(p.corridor===cor?' selected':'')+'>'+cor+'</option>')
+  ).join('');
+
+  const fileById = {};
+  (state.activeFiles||[]).forEach(f=>{ fileById[f.id] = f; });
+
+  const agreementsHtml = (p.agreements||[]).length ? (p.agreements||[]).map(a=>{
+    const linkedFile = a.fileId ? fileById[a.fileId] : null;
+    let fileControl;
+    if(linkedFile){
+      fileControl = '<a class="doc-file-link" href="#" onclick="viewStoredFileById(\''+linkedFile.id+'\'); return false;" title="Preview '+escapeAttr(linkedFile.name)+'">'+escapeHtml(linkedFile.name)+'</a>'+
+        '<a class="doc-link-btn" href="#" onclick="downloadStoredFileById(\''+linkedFile.id+'\'); return false;" title="Download">&darr;</a>'+
+        '<button class="doc-link-btn" title="Unlink file" onclick="unlinkAgreementFile(\''+a.id+'\')">&times;</button>';
+    } else {
+      fileControl = '<label class="doc-link-btn" title="Attach file" style="cursor:pointer;">&#128206;'+
+        '<input type="file" style="display:none;" onchange="handleAgreementFileUpload(event,\''+a.id+'\')"></label>';
+    }
+    let expBadge = '';
+    if(a.expiryDate){
+      const days = daysUntil(a.expiryDate);
+      let cls='badge-teal';
+      if(days<0) cls='badge-red'; else if(days<=30) cls='badge-amber';
+      expBadge = '<span class="item-date '+cls+'">'+fmtDate(a.expiryDate)+'</span>';
+    }
+    return '<div class="item-row">'+
+      '<span class="item-name">'+escapeHtml(a.title)+'</span>'+
+      expBadge+fileControl+
+      '<button class="item-del" onclick="deleteAgreement(\''+a.id+'\')">&times;</button>'+
+      '</div>';
+  }).join('') : '<div style="color:var(--ink-soft); font-size:12.5px; padding:4px 0 0;">No agreements added yet.</div>';
+
+  document.getElementById('drawer').innerHTML =
+    '<div class="drawer-head"><div class="row">'+
+    '<div><h2>'+escapeHtml(p.name)+'</h2><span class="id-tag">Partner</span></div>'+
+    '<div style="display:flex; align-items:center; gap:8px;">'+
+    '<button class="btn btn-sm btn-primary" onclick="savePartnerNow(event)">Save changes</button>'+
+    '<button class="close-x" onclick="closePartnerDrawer()" style="width:auto; padding:6px 12px; font-size:13px;">Close</button>'+
+    '</div></div></div>'+
+    '<div class="drawer-body">'+
+
+    '<div class="drawer-section">'+
+    '<h4>Basic information</h4>'+
+    '<div class="field"><label>Company / Agent name</label><input id="pd-name" value="'+escapeAttr(p.name)+'" onchange="updatePartnerField(\'name\', this.value)"></div>'+
+    '<div class="field-row">'+
+    '<div class="field"><label>Contact person</label><input id="pd-contact" value="'+escapeAttr(p.contactPerson||'')+'" onchange="updatePartnerField(\'contactPerson\', this.value)"></div>'+
+    '<div class="field"><label>Phone</label><input id="pd-phone" value="'+escapeAttr(p.phone||'')+'" onchange="updatePartnerField(\'phone\', this.value)"></div>'+
+    '</div>'+
+    '<div class="field-row">'+
+    '<div class="field"><label>Email</label><input id="pd-email" type="email" value="'+escapeAttr(p.email||'')+'" onchange="updatePartnerField(\'email\', this.value)"></div>'+
+    '<div class="field"><label>Placement</label><select id="pd-corridor" onchange="updatePartnerField(\'corridor\', this.value)">'+corridorOptions+'</select></div>'+
+    '</div>'+
+    '<div class="field"><label>Address</label><textarea id="pd-address" onchange="updatePartnerField(\'address\', this.value)">'+escapeHtml(p.address||'')+'</textarea></div>'+
+    '</div>'+
+
+    '<div class="drawer-section">'+
+    '<h4>Agreements &amp; legal documents</h4>'+
+    agreementsHtml+
+    '<div class="add-item-row" style="flex-wrap:wrap;">'+
+    '<input id="new-agr-title" placeholder="Agreement title" style="flex:1 1 140px;">'+
+    '<input id="new-agr-date" type="date" title="Expiry date" style="max-width:130px;">'+
+    '<input id="new-agr-file" type="file" style="max-width:160px; font-size:11px;">'+
+    '<button class="btn btn-sm" onclick="addAgreement()">Add</button>'+
+    '</div>'+
+    '<div class="file-hint">Set an expiry date so renewals show up before they lapse.</div>'+
+    '</div>'+
+
+    '<div class="drawer-section">'+
+    '<button class="btn btn-danger" onclick="deletePartner()">Delete partner</button>'+
+    '</div>'+
+
+    '</div>';
 }
 
 /* ---------- Access gate (basic shared-password lock, not full security) ---------- */
