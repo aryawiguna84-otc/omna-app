@@ -383,6 +383,10 @@
         <span>Partners</span>
         <span class="count" id="count-partners">0</span>
       </div>
+      <div class="nav-item" data-view="documents" onclick="setView('documents')">
+        <span>Documents</span>
+        <span class="count" id="count-documents">0</span>
+      </div>
       <div class="nav-item" data-view="analytics" onclick="setView('analytics')">
         <span>Analytics</span>
       </div>
@@ -502,6 +506,8 @@ window.storage = (function(){
 
 const DEFAULT_STAGES = ['Registration','Document Verification','Interview','Visa Submitted','Visa Denial','Visa Approved','Departed','Completed'];
 const DEFAULT_CORRIDORS = ['Turkey','Croatia','Albania','Montenegro','Japan','Brunei Darussalam','Greece'];
+const DEFAULT_PARTNER_TYPES = ['Placement Agent','Medical Facility','School'];
+const DEFAULT_DOCUMENT_TYPES = ['MOU','JO/Demand Letter','SIP2MI'];
 const DEFAULT_CUSTOM_FIELDS = [];
 const DEFAULT_DOC_TEMPLATES = {};
 const THEME_PRESETS = [
@@ -563,7 +569,13 @@ let state = {
   showImportBanner: false,
   showImportBanner2025: false,
   partners: [],
-  activePartnerId: null
+  activePartnerId: null,
+  partnerTypes: [...DEFAULT_PARTNER_TYPES],
+  filterPartnerType: '',
+  documents: [],
+  activeDocumentId: null,
+  documentTypes: [...DEFAULT_DOCUMENT_TYPES],
+  filterDocumentType: ''
 };
 
 function uid(prefix){
@@ -631,6 +643,18 @@ async function loadData(){
     const pt = await window.storage.get('partners', true);
     state.partners = pt ? JSON.parse(pt.value) : [];
   }catch(e){ state.partners = []; }
+  try{
+    const ptt = await window.storage.get('partnerTypes', true);
+    state.partnerTypes = ptt ? JSON.parse(ptt.value) : [...DEFAULT_PARTNER_TYPES];
+  }catch(e){ state.partnerTypes = [...DEFAULT_PARTNER_TYPES]; }
+  try{
+    const dc = await window.storage.get('documents', true);
+    state.documents = dc ? JSON.parse(dc.value) : [];
+  }catch(e){ state.documents = []; }
+  try{
+    const dtt = await window.storage.get('documentTypes', true);
+    state.documentTypes = dtt ? JSON.parse(dtt.value) : [...DEFAULT_DOCUMENT_TYPES];
+  }catch(e){ state.documentTypes = [...DEFAULT_DOCUMENT_TYPES]; }
   render();
 }
 async function importMigratedCandidates(){
@@ -803,24 +827,27 @@ function render(){
     state.view === 'dashboard' ? 'Dashboard' :
     state.view === 'settings' ? 'Settings' :
     state.view === 'partners' ? 'Partners' :
+    state.view === 'documents' ? 'Documents' :
     state.view === 'analytics' ? 'Analytics' :
     state.filterCorridor ? 'Placement — ' + state.filterCorridor : 'All candidates';
   const banner = (state.showImportBanner ? renderImportBanner() : '') + (state.showImportBanner2025 ? renderImportBanner2025() : '');
   if(state.view === 'dashboard') el.innerHTML = banner + renderDashboard();
   else if(state.view === 'settings') el.innerHTML = renderSettings();
   else if(state.view === 'partners') el.innerHTML = renderPartnersTable();
+  else if(state.view === 'documents') el.innerHTML = renderDocumentsTable();
   else if(state.view === 'analytics') el.innerHTML = renderAnalytics();
   else if(state.filterCorridor) el.innerHTML = banner + renderDashboard(state.filterCorridor) + renderTable();
   else el.innerHTML = banner + renderTable();
   const btnImport = document.getElementById('btn-import');
   const btnExport = document.getElementById('btn-export');
   const btnNew = document.getElementById('btn-new-primary');
-  const dataView = (state.view === 'partners' || state.view === 'analytics');
+  const dataView = (state.view === 'partners' || state.view === 'documents' || state.view === 'analytics');
   if(btnImport) btnImport.style.display = dataView ? 'none' : '';
   if(btnExport) btnExport.style.display = dataView ? 'none' : '';
   if(btnNew){
     if(state.view === 'analytics'){ btnNew.style.display = 'none'; }
     else if(state.view === 'partners'){ btnNew.style.display = ''; btnNew.textContent = '+ New partner'; btnNew.onclick = openAddPartner; }
+    else if(state.view === 'documents'){ btnNew.style.display = ''; btnNew.textContent = '+ New document'; btnNew.onclick = openAddDocRecord; }
     else { btnNew.style.display = ''; btnNew.textContent = '+ New candidate'; btnNew.onclick = openAddCandidate; }
   }
 }
@@ -831,6 +858,24 @@ function renderSettings(){
     '<button class="doc-link-btn" title="Move down" '+(i===state.stages.length-1?'disabled style="opacity:0.3;"':'onclick="moveStage('+i+',1)"')+'>&darr;</button>'+
     '<input class="item-name" style="border:1px solid var(--line); border-radius:5px; padding:4px 8px;" value="'+escapeAttr(s)+'" onchange="renameStage('+i+', this.value)">'+
     '<button class="item-del" onclick="removeStage('+i+')">&times;</button>'+
+    '</div>'
+  ).join('');
+
+  const partnerTypeRows = state.partnerTypes.map((t,i)=>
+    '<div class="item-row">'+
+    '<button class="doc-link-btn" title="Move up" '+(i===0?'disabled style="opacity:0.3;"':'onclick="movePartnerType('+i+',-1)"')+'>&uarr;</button>'+
+    '<button class="doc-link-btn" title="Move down" '+(i===state.partnerTypes.length-1?'disabled style="opacity:0.3;"':'onclick="movePartnerType('+i+',1)"')+'>&darr;</button>'+
+    '<input class="item-name" style="border:1px solid var(--line); border-radius:5px; padding:4px 8px;" value="'+escapeAttr(t)+'" onchange="renamePartnerType('+i+', this.value)">'+
+    '<button class="item-del" onclick="removePartnerType('+i+')">&times;</button>'+
+    '</div>'
+  ).join('');
+
+  const docTypeRows = state.documentTypes.map((t,i)=>
+    '<div class="item-row">'+
+    '<button class="doc-link-btn" title="Move up" '+(i===0?'disabled style="opacity:0.3;"':'onclick="moveDocumentType('+i+',-1)"')+'>&uarr;</button>'+
+    '<button class="doc-link-btn" title="Move down" '+(i===state.documentTypes.length-1?'disabled style="opacity:0.3;"':'onclick="moveDocumentType('+i+',1)"')+'>&darr;</button>'+
+    '<input class="item-name" style="border:1px solid var(--line); border-radius:5px; padding:4px 8px;" value="'+escapeAttr(t)+'" onchange="renameDocumentType('+i+', this.value)">'+
+    '<button class="item-del" onclick="removeDocumentType('+i+')">&times;</button>'+
     '</div>'
   ).join('');
 
@@ -856,6 +901,18 @@ function renderSettings(){
     stageRows+
     '<div class="add-item-row" style="margin-top:10px;"><input id="new-stage-name" placeholder="New stage name"><button class="btn btn-sm" onclick="addStage()">Add stage</button></div>'+
     '<div class="file-hint">Reorder, rename, or remove pipeline stages. Removing a stage does not change candidates already on it.</div>'+
+    '</div></div>'+
+
+    '<div class="panel"><div class="panel-head"><h3>Partner types</h3></div><div class="panel-body" style="padding:12px 18px;">'+
+    partnerTypeRows+
+    '<div class="add-item-row" style="margin-top:10px;"><input id="new-partner-type-name" placeholder="New type name"><button class="btn btn-sm" onclick="addPartnerType()">Add type</button></div>'+
+    '<div class="file-hint">Categorize partners as placement agents, medical facilities (MCU), schools, or any other type you add here. Removing a type does not change partners already using it.</div>'+
+    '</div></div>'+
+
+    '<div class="panel"><div class="panel-head"><h3>Document types</h3></div><div class="panel-body" style="padding:12px 18px;">'+
+    docTypeRows+
+    '<div class="add-item-row" style="margin-top:10px;"><input id="new-doc-type-name" placeholder="New type name"><button class="btn btn-sm" onclick="addDocumentType()">Add type</button></div>'+
+    '<div class="file-hint">Categories for the Documents section — MOU, JO/Demand Letter, SIP2MI, or any other type you add here. Removing a type does not change documents already using it.</div>'+
     '</div></div>'+
 
     '<div class="panel"><div class="panel-head"><h3>Default document checklist per placement</h3></div><div class="panel-body" style="padding:12px 18px;">'+
@@ -901,6 +958,8 @@ function renderSidebar(){
   document.getElementById('count-all').textContent = state.candidates.length;
   const countPartnersEl = document.getElementById('count-partners');
   if(countPartnersEl) countPartnersEl.textContent = state.partners.length;
+  const countDocumentsEl = document.getElementById('count-documents');
+  if(countDocumentsEl) countDocumentsEl.textContent = state.documents.length;
   const nav = document.getElementById('corridor-nav');
   nav.innerHTML = state.corridors.map(cor=>{
     const n = state.candidates.filter(c=>c.corridor===cor).length;
@@ -924,11 +983,17 @@ function renderDashboard(corridor){
   list.forEach(c=>{
     (c.documents||[]).forEach(d=>{
       if(d.deadline && !d.done){
-        deadlines.push({candidateId:c.id, candidateName:c.name, corridor:c.corridor, doc:d.name, date:d.deadline});
+        deadlines.push({kind:'candidate', refId:c.id, name:c.name, corridor:c.corridor, doc:d.name, date:d.deadline});
       }
     });
     if(c.passportExpiry){
-      deadlines.push({candidateId:c.id, candidateName:c.name, corridor:c.corridor, doc:'Passport expiry', date:c.passportExpiry});
+      deadlines.push({kind:'candidate', refId:c.id, name:c.name, corridor:c.corridor, doc:'Passport expiry', date:c.passportExpiry});
+    }
+  });
+  const docScope = corridor ? state.documents.filter(d=>d.corridor===corridor) : state.documents;
+  docScope.forEach(d=>{
+    if(d.expiryDate){
+      deadlines.push({kind:'document', refId:d.id, name:d.title||d.type, corridor:d.corridor||'—', doc:d.type||'Document', date:d.expiryDate});
     }
   });
   deadlines.sort((a,b)=> a.date.localeCompare(b.date));
@@ -936,16 +1001,17 @@ function renderDashboard(corridor){
 
   let deadlineRows = '';
   if(upcoming.length === 0){
-    deadlineRows = '<div class="empty-row">No document expiration dates recorded yet. Add a document with an expiration date on a candidate detail panel.</div>';
+    deadlineRows = '<div class="empty-row">No document expiration dates recorded yet. Add a document with an expiration date on a candidate detail panel or in the Documents section.</div>';
   } else {
     deadlineRows = upcoming.map(d=>{
       const days = daysUntil(d.date);
       let dot='dot-teal', badge='badge-teal', tag=fmtDate(d.date);
       if(days < 0){ dot='dot-red'; badge='badge-red'; tag='Overdue ' + Math.abs(days) + ' days'; }
       else if(days <= 7){ dot='dot-amber'; badge='badge-amber'; tag = days===0?'Due today':days+' days left'; }
-      return '<div class="deadline-row" onclick="openDetail(\''+d.candidateId+'\')">'+
+      const openFn = d.kind === 'document' ? 'openDocRecordDetail' : 'openDetail';
+      return '<div class="deadline-row" onclick="'+openFn+'(\''+d.refId+'\')">'+
         '<div class="deadline-left"><span class="deadline-dot '+dot+'"></span>'+
-        '<div><div class="deadline-name">'+escapeHtml(d.candidateName)+'</div>'+
+        '<div><div class="deadline-name">'+escapeHtml(d.name)+'</div>'+
         '<div class="deadline-doc">'+escapeHtml(d.doc)+' &middot; '+escapeHtml(d.corridor)+'</div></div></div>'+
         '<span class="deadline-date '+badge+'">'+tag+'</span></div>';
     }).join('');
@@ -1032,15 +1098,18 @@ function renderTable(){
 }
 
 function renderPartnersTable(){
-  const list = state.partners.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  let list = state.partners.slice();
+  if(state.filterPartnerType) list = list.filter(p=>(p.partnerType||'')===state.filterPartnerType);
+  list.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   let rows;
   if(list.length === 0){
-    rows = '<tr><td colspan="5"><div class="empty-row">No partner agents or companies yet. Add one to get started.</div></td></tr>';
+    rows = '<tr><td colspan="6"><div class="empty-row">No partner agents or companies yet. Add one to get started.</div></td></tr>';
   } else {
     rows = list.map(p=>{
       const agreementCount = (p.agreements||[]).length;
       return '<tr class="row-clickable" onclick="openPartnerDetail(\''+p.id+'\')">'+
         '<td style="font-weight:500;">'+escapeHtml(p.name)+'</td>'+
+        '<td>'+escapeHtml(p.partnerType||'—')+'</td>'+
         '<td>'+escapeHtml(p.contactPerson||'—')+'</td>'+
         '<td>'+escapeHtml(p.phone||'—')+'</td>'+
         '<td>'+escapeHtml(p.corridor||'—')+'</td>'+
@@ -1048,9 +1117,51 @@ function renderPartnersTable(){
         '</tr>';
     }).join('');
   }
+  const typeOptions = ['<option value="">All types</option>'].concat(
+    state.partnerTypes.map(t=>'<option value="'+escapeAttr(t)+'"'+(state.filterPartnerType===t?' selected':'')+'>'+t+'</option>')
+  ).join('');
   return '<div class="eyebrow">Partner agents &amp; companies</div>'+
+    '<div class="filters"><select onchange="state.filterPartnerType=this.value; render();">'+typeOptions+'</select></div>'+
     '<div class="panel"><table><thead><tr>'+
-    '<th>Company / Agent</th><th>Contact person</th><th>Phone</th><th>Placement</th><th>Agreements</th>'+
+    '<th>Company / Agent</th><th>Type</th><th>Contact person</th><th>Phone</th><th>Placement</th><th>Agreements</th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+function renderDocumentsTable(){
+  let list = state.documents.slice();
+  if(state.filterDocumentType) list = list.filter(d=>d.type===state.filterDocumentType);
+  list.sort((a,b)=>{
+    if(!a.expiryDate) return 1;
+    if(!b.expiryDate) return -1;
+    return a.expiryDate.localeCompare(b.expiryDate);
+  });
+  let rows;
+  if(list.length === 0){
+    rows = '<tr><td colspan="5"><div class="empty-row">No documents added yet. Add an MOU, JO/Demand Letter, SIP2MI, or other record to get started.</div></td></tr>';
+  } else {
+    rows = list.map(d=>{
+      let expCell = '<span style="color:var(--ink-soft);">—</span>';
+      if(d.expiryDate){
+        const days = daysUntil(d.expiryDate);
+        let badge = 'badge-teal';
+        if(days<0) badge='badge-red'; else if(days<=30) badge='badge-amber';
+        expCell = '<span class="deadline-date '+badge+'">'+fmtDate(d.expiryDate)+'</span>';
+      }
+      return '<tr class="row-clickable" onclick="openDocRecordDetail(\''+d.id+'\')">'+
+        '<td style="font-weight:500;">'+escapeHtml(d.title||d.type)+'</td>'+
+        '<td>'+escapeHtml(d.type||'—')+'</td>'+
+        '<td>'+escapeHtml(d.corridor||'—')+'</td>'+
+        '<td>'+expCell+'</td>'+
+        '<td>'+(d.fileId ? 'Yes' : '—')+'</td>'+
+        '</tr>';
+    }).join('');
+  }
+  const typeOptions = ['<option value="">All types</option>'].concat(
+    state.documentTypes.map(t=>'<option value="'+escapeAttr(t)+'"'+(state.filterDocumentType===t?' selected':'')+'>'+t+'</option>')
+  ).join('');
+  return '<div class="eyebrow">Documents — MOU, JO/Demand Letter, SIP2MI &amp; more</div>'+
+    '<div class="filters"><select onchange="state.filterDocumentType=this.value; render();">'+typeOptions+'</select></div>'+
+    '<div class="panel"><table><thead><tr>'+
+    '<th>Title</th><th>Type</th><th>Placement</th><th>Expiry</th><th>File</th>'+
     '</tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 function renderAnalytics(){
@@ -1384,6 +1495,76 @@ function exportCSV(){
 }
 
 /* ---------- Settings: stages ---------- */
+async function saveDocumentTypes(){
+  try{
+    await window.storage.set('documentTypes', JSON.stringify(state.documentTypes), true);
+  }catch(e){ showToast('Failed to save document types.'); }
+}
+function addDocumentType(){
+  const v = document.getElementById('new-doc-type-name').value.trim();
+  if(!v){ showToast('Type name is required.'); return; }
+  if(state.documentTypes.includes(v)){ showToast('This type already exists.'); return; }
+  state.documentTypes.push(v);
+  saveDocumentTypes();
+  render();
+}
+function removeDocumentType(i){
+  if(state.documentTypes.length<=1){ showToast('Keep at least one document type.'); return; }
+  state.documentTypes.splice(i,1);
+  saveDocumentTypes();
+  render();
+}
+function renameDocumentType(i, value){
+  const v = value.trim();
+  if(!v) return;
+  state.documentTypes[i] = v;
+  saveDocumentTypes();
+  render();
+}
+function moveDocumentType(i, dir){
+  const j = i+dir;
+  if(j<0 || j>=state.documentTypes.length) return;
+  const tmp = state.documentTypes[i];
+  state.documentTypes[i] = state.documentTypes[j];
+  state.documentTypes[j] = tmp;
+  saveDocumentTypes();
+  render();
+}
+async function savePartnerTypes(){
+  try{
+    await window.storage.set('partnerTypes', JSON.stringify(state.partnerTypes), true);
+  }catch(e){ showToast('Failed to save partner types.'); }
+}
+function addPartnerType(){
+  const v = document.getElementById('new-partner-type-name').value.trim();
+  if(!v){ showToast('Type name is required.'); return; }
+  if(state.partnerTypes.includes(v)){ showToast('This type already exists.'); return; }
+  state.partnerTypes.push(v);
+  savePartnerTypes();
+  render();
+}
+function removePartnerType(i){
+  if(state.partnerTypes.length<=1){ showToast('Keep at least one partner type.'); return; }
+  state.partnerTypes.splice(i,1);
+  savePartnerTypes();
+  render();
+}
+function renamePartnerType(i, value){
+  const v = value.trim();
+  if(!v) return;
+  state.partnerTypes[i] = v;
+  savePartnerTypes();
+  render();
+}
+function movePartnerType(i, dir){
+  const j = i+dir;
+  if(j<0 || j>=state.partnerTypes.length) return;
+  const tmp = state.partnerTypes[i];
+  state.partnerTypes[i] = state.partnerTypes[j];
+  state.partnerTypes[j] = tmp;
+  savePartnerTypes();
+  render();
+}
 function addStage(){
   const v = document.getElementById('new-stage-name').value.trim();
   if(!v){ showToast('Stage name is required.'); return; }
@@ -2071,17 +2252,21 @@ function openAddPartner(){
   const corridorOptions = ['<option value="">Not set</option>'].concat(
     state.corridors.map(c=>'<option value="'+escapeAttr(c)+'">'+c+'</option>')
   ).join('');
+  const typeOptions = ['<option value="">Not set</option>'].concat(
+    state.partnerTypes.map(t=>'<option value="'+escapeAttr(t)+'">'+t+'</option>')
+  ).join('');
   document.getElementById('modal').innerHTML =
     '<h3>New partner</h3>'+
     '<div class="field"><label>Company / Agent name</label><input id="np-name" placeholder="Partner company name"></div>'+
     '<div class="field-row">'+
+    '<div class="field"><label>Partner type</label><select id="np-type">'+typeOptions+'</select></div>'+
+    '<div class="field"><label>Placement</label><select id="np-corridor">'+corridorOptions+'</select></div>'+
+    '</div>'+
+    '<div class="field-row">'+
     '<div class="field"><label>Contact person</label><input id="np-contact" placeholder="Contact name"></div>'+
     '<div class="field"><label>Phone</label><input id="np-phone" placeholder="08xx-xxxx-xxxx"></div>'+
     '</div>'+
-    '<div class="field-row">'+
     '<div class="field"><label>Email</label><input id="np-email" type="email" placeholder="name@company.com"></div>'+
-    '<div class="field"><label>Placement</label><select id="np-corridor">'+corridorOptions+'</select></div>'+
-    '</div>'+
     '<div class="field"><label>Address</label><textarea id="np-address" placeholder="Company address"></textarea></div>'+
     '<div class="modal-actions">'+
     '<button class="btn" onclick="closeModal()">Cancel</button>'+
@@ -2095,6 +2280,7 @@ function submitAddPartner(){
   const p = {
     id: uid('p'),
     name,
+    partnerType: document.getElementById('np-type').value,
     contactPerson: document.getElementById('np-contact').value.trim(),
     phone: document.getElementById('np-phone').value.trim(),
     email: document.getElementById('np-email').value.trim(),
@@ -2146,12 +2332,13 @@ function updatePartnerField(field, value){
 async function addAgreement(){
   const p = getActivePartner(); if(!p) return;
   const title = document.getElementById('new-agr-title').value.trim();
+  const signedDate = document.getElementById('new-agr-signed').value;
   const expiryDate = document.getElementById('new-agr-date').value;
   const fileInput = document.getElementById('new-agr-file');
   const file = fileInput && fileInput.files && fileInput.files[0];
   if(!title){ showToast('Agreement title is required.'); return; }
   if(file && file.size > 4*1024*1024){ showToast('File is too large (max 4 MB).'); return; }
-  const agreement = {id:uid('agr'), title, expiryDate: expiryDate || null, fileId:null};
+  const agreement = {id:uid('agr'), title, signedDate: signedDate || null, expiryDate: expiryDate || null, fileId:null};
   try{
     if(file){
       const dataUrl = await readFileAsDataUrl(file);
@@ -2222,6 +2409,9 @@ function renderPartnerDrawer(){
   const corridorOptions = ['<option value="">Not set</option>'].concat(
     state.corridors.map(cor=>'<option value="'+escapeAttr(cor)+'"'+(p.corridor===cor?' selected':'')+'>'+cor+'</option>')
   ).join('');
+  const partnerTypeOptions = ['<option value="">Not set</option>'].concat(
+    state.partnerTypes.map(t=>'<option value="'+escapeAttr(t)+'"'+(p.partnerType===t?' selected':'')+'>'+t+'</option>')
+  ).join('');
 
   const fileById = {};
   (state.activeFiles||[]).forEach(f=>{ fileById[f.id] = f; });
@@ -2237,16 +2427,17 @@ function renderPartnerDrawer(){
       fileControl = '<label class="doc-link-btn" title="Attach file" style="cursor:pointer;">&#128206;'+
         '<input type="file" style="display:none;" onchange="handleAgreementFileUpload(event,\''+a.id+'\')"></label>';
     }
+    let signedBadge = a.signedDate ? '<span class="item-date" style="color:var(--ink-soft);" title="Signed date">Signed '+fmtDate(a.signedDate)+'</span>' : '';
     let expBadge = '';
     if(a.expiryDate){
       const days = daysUntil(a.expiryDate);
       let cls='badge-teal';
       if(days<0) cls='badge-red'; else if(days<=30) cls='badge-amber';
-      expBadge = '<span class="item-date '+cls+'">'+fmtDate(a.expiryDate)+'</span>';
+      expBadge = '<span class="item-date '+cls+'" title="Expiry date">'+fmtDate(a.expiryDate)+'</span>';
     }
     return '<div class="item-row">'+
       '<span class="item-name">'+escapeHtml(a.title)+'</span>'+
-      expBadge+fileControl+
+      signedBadge+expBadge+fileControl+
       '<button class="item-del" onclick="deleteAgreement(\''+a.id+'\')">&times;</button>'+
       '</div>';
   }).join('') : '<div style="color:var(--ink-soft); font-size:12.5px; padding:4px 0 0;">No agreements added yet.</div>';
@@ -2264,13 +2455,14 @@ function renderPartnerDrawer(){
     '<h4>Basic information</h4>'+
     '<div class="field"><label>Company / Agent name</label><input id="pd-name" value="'+escapeAttr(p.name)+'" onchange="updatePartnerField(\'name\', this.value)"></div>'+
     '<div class="field-row">'+
+    '<div class="field"><label>Partner type</label><select id="pd-type" onchange="updatePartnerField(\'partnerType\', this.value)">'+partnerTypeOptions+'</select></div>'+
+    '<div class="field"><label>Placement</label><select id="pd-corridor" onchange="updatePartnerField(\'corridor\', this.value)">'+corridorOptions+'</select></div>'+
+    '</div>'+
+    '<div class="field-row">'+
     '<div class="field"><label>Contact person</label><input id="pd-contact" value="'+escapeAttr(p.contactPerson||'')+'" onchange="updatePartnerField(\'contactPerson\', this.value)"></div>'+
     '<div class="field"><label>Phone</label><input id="pd-phone" value="'+escapeAttr(p.phone||'')+'" onchange="updatePartnerField(\'phone\', this.value)"></div>'+
     '</div>'+
-    '<div class="field-row">'+
     '<div class="field"><label>Email</label><input id="pd-email" type="email" value="'+escapeAttr(p.email||'')+'" onchange="updatePartnerField(\'email\', this.value)"></div>'+
-    '<div class="field"><label>Placement</label><select id="pd-corridor" onchange="updatePartnerField(\'corridor\', this.value)">'+corridorOptions+'</select></div>'+
-    '</div>'+
     '<div class="field"><label>Address</label><textarea id="pd-address" onchange="updatePartnerField(\'address\', this.value)">'+escapeHtml(p.address||'')+'</textarea></div>'+
     '</div>'+
 
@@ -2278,16 +2470,222 @@ function renderPartnerDrawer(){
     '<h4>Agreements &amp; legal documents</h4>'+
     agreementsHtml+
     '<div class="add-item-row" style="flex-wrap:wrap;">'+
-    '<input id="new-agr-title" placeholder="Agreement title" style="flex:1 1 140px;">'+
+    '<input id="new-agr-title" placeholder="Agreement title (e.g. MOU)" style="flex:1 1 140px;">'+
+    '<input id="new-agr-signed" type="date" title="Signed date" style="max-width:130px;">'+
     '<input id="new-agr-date" type="date" title="Expiry date" style="max-width:130px;">'+
     '<input id="new-agr-file" type="file" style="max-width:160px; font-size:11px;">'+
     '<button class="btn btn-sm" onclick="addAgreement()">Add</button>'+
     '</div>'+
-    '<div class="file-hint">Set an expiry date so renewals show up before they lapse.</div>'+
+    '<div class="file-hint">First date field is when it was signed, second is when it expires — set the expiry date so renewals show up before they lapse.</div>'+
     '</div>'+
 
     '<div class="drawer-section">'+
     '<button class="btn btn-danger" onclick="deletePartner()">Delete partner</button>'+
+    '</div>'+
+
+    '</div>';
+}
+
+/* ---------- Documents (MOU / JO-Demand Letter / SIP2MI / etc.) ---------- */
+function getActiveDocRecord(){
+  return state.documents.find(d=>d.id===state.activeDocumentId);
+}
+async function saveDocuments(recordOverride){
+  try{
+    const active = recordOverride || getActiveDocRecord();
+    if(active){
+      const latest = await window.storage.get('documents', true);
+      let serverArr = [];
+      try{ serverArr = latest && latest.value ? JSON.parse(latest.value) : []; }catch(e2){ serverArr = state.documents; }
+      const idx = serverArr.findIndex(x=>x.id === active.id);
+      if(idx === -1) serverArr.push(active); else serverArr[idx] = active;
+      await window.storage.set('documents', JSON.stringify(serverArr), true);
+      state.documents = serverArr;
+    } else {
+      await window.storage.set('documents', JSON.stringify(state.documents), true);
+    }
+    return true;
+  }catch(e){ showToast('Failed to save document. Please try again.'); return false; }
+}
+async function saveDocRecordNow(ev){
+  const d = getActiveDocRecord(); if(!d) return;
+  const btn = ev && ev.target;
+  if(btn){ btn.disabled = true; btn.textContent = 'Saving...'; }
+  const ok = await saveDocuments();
+  if(btn){ btn.disabled = false; btn.textContent = 'Save changes'; }
+  if(ok) showToast('Changes saved.');
+}
+function openAddDocRecord(){
+  const typeOptions = state.documentTypes.map(t=>'<option value="'+escapeAttr(t)+'">'+t+'</option>').join('');
+  const corridorOptions = ['<option value="">Not set</option>'].concat(
+    state.corridors.map(c=>'<option value="'+escapeAttr(c)+'">'+c+'</option>')
+  ).join('');
+  document.getElementById('modal').innerHTML =
+    '<h3>New document</h3>'+
+    '<div class="field-row">'+
+    '<div class="field"><label>Type</label><select id="nd-type">'+typeOptions+'</select></div>'+
+    '<div class="field"><label>Placement</label><select id="nd-corridor">'+corridorOptions+'</select></div>'+
+    '</div>'+
+    '<div class="field"><label>Title / reference</label><input id="nd-title" placeholder="e.g. MOU with ABC Manpower Agency"></div>'+
+    '<div class="field-row">'+
+    '<div class="field"><label>Issue date</label><input id="nd-issue" type="date"></div>'+
+    '<div class="field"><label>Expiry date</label><input id="nd-expiry" type="date"></div>'+
+    '</div>'+
+    '<div class="modal-actions">'+
+    '<button class="btn" onclick="closeModal()">Cancel</button>'+
+    '<button class="btn btn-primary" onclick="submitAddDocRecord()">Save document</button>'+
+    '</div>';
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function submitAddDocRecord(){
+  const type = document.getElementById('nd-type').value;
+  const title = document.getElementById('nd-title').value.trim();
+  if(!title){ showToast('Title / reference is required.'); return; }
+  const d = {
+    id: uid('doc'),
+    type,
+    title,
+    corridor: document.getElementById('nd-corridor').value,
+    issueDate: document.getElementById('nd-issue').value || null,
+    expiryDate: document.getElementById('nd-expiry').value || null,
+    fileId: null,
+    createdAt: new Date().toISOString().slice(0,10)
+  };
+  state.documents.push(d);
+  saveDocuments(d);
+  closeModal();
+  render();
+  showToast('Document added.');
+}
+async function openDocRecordDetail(id){
+  state.activeDocumentId = id;
+  state.activeFiles = [];
+  document.getElementById('drawer-overlay').classList.add('open');
+  document.getElementById('drawer').innerHTML = '<div class="loading-state">Loading document detail...</div>';
+  await loadFilesForActiveDocRecord(id);
+  renderDocRecordDrawer();
+}
+function closeDocRecordDrawer(){
+  document.getElementById('drawer-overlay').classList.remove('open');
+  state.activeDocumentId = null;
+  state.activeFiles = [];
+}
+async function loadFilesForActiveDocRecord(id){
+  try{
+    const r = await window.storage.get('files:docrecord:'+id, true);
+    state.activeFiles = r ? JSON.parse(r.value) : [];
+  }catch(e){
+    state.activeFiles = [];
+  }
+}
+async function saveActiveDocRecordFiles(){
+  try{
+    await window.storage.set('files:docrecord:'+state.activeDocumentId, JSON.stringify(state.activeFiles), true);
+  }catch(e){
+    showToast('Failed to save file. Please try again.');
+  }
+}
+function updateDocRecordField(field, value){
+  const d = getActiveDocRecord(); if(!d) return;
+  d[field] = value;
+  saveDocuments();
+  render();
+}
+function handleDocRecordFileUpload(event){
+  const input = event.target;
+  const file = input.files && input.files[0];
+  if(!file) return;
+  const MAX_BYTES = 4 * 1024 * 1024;
+  if(file.size > MAX_BYTES){ showToast('File is too large (max 4 MB).'); input.value=''; return; }
+  const reader = new FileReader();
+  reader.onload = async function(){
+    const d = getActiveDocRecord(); if(!d) return;
+    const newFile = {
+      id: uid('f'), name: file.name, size: file.size, type: file.type,
+      dataUrl: reader.result, uploadedAt: new Date().toISOString().slice(0,10)
+    };
+    state.activeFiles = state.activeFiles || [];
+    state.activeFiles.push(newFile);
+    d.fileId = newFile.id;
+    await saveActiveDocRecordFiles();
+    await saveDocuments();
+    renderDocRecordDrawer();
+    showToast('File attached.');
+  };
+  reader.onerror = function(){ showToast('Failed to read file.'); };
+  reader.readAsDataURL(file);
+}
+function removeDocRecordFile(){
+  const d = getActiveDocRecord(); if(!d) return;
+  d.fileId = null;
+  saveDocuments();
+  renderDocRecordDrawer();
+}
+function deleteDocRecord(){
+  const d = getActiveDocRecord(); if(!d) return;
+  if(!confirm('Delete document "'+(d.title||d.type)+'"? This action cannot be undone.')) return;
+  state.documents = state.documents.filter(x=>x.id!==d.id);
+  saveDocuments();
+  try{ window.storage.delete('files:docrecord:'+d.id, true); }catch(e){}
+  closeDocRecordDrawer();
+  render();
+  showToast('Document deleted.');
+}
+function renderDocRecordDrawer(){
+  const d = getActiveDocRecord();
+  if(!d){ return; }
+  const typeOptions = state.documentTypes.map(t=>'<option value="'+escapeAttr(t)+'"'+(d.type===t?' selected':'')+'>'+t+'</option>').join('');
+  const corridorOptions = ['<option value="">Not set</option>'].concat(
+    state.corridors.map(cor=>'<option value="'+escapeAttr(cor)+'"'+(d.corridor===cor?' selected':'')+'>'+cor+'</option>')
+  ).join('');
+
+  const linkedFile = d.fileId ? (state.activeFiles||[]).find(f=>f.id===d.fileId) : null;
+  let fileControl;
+  if(linkedFile){
+    fileControl = '<div class="file-row">'+
+      '<a class="file-name" href="#" onclick="viewStoredFileById(\''+linkedFile.id+'\'); return false;" title="Preview '+escapeAttr(linkedFile.name)+'">'+escapeHtml(linkedFile.name)+'</a>'+
+      '<span class="file-size">'+fmtSize(linkedFile.size)+'</span>'+
+      '<a class="doc-link-btn" href="#" onclick="downloadStoredFileById(\''+linkedFile.id+'\'); return false;" title="Download">&darr;</a>'+
+      '<button class="item-del" onclick="removeDocRecordFile()">&times;</button>'+
+      '</div>';
+  } else {
+    fileControl = '<label class="file-upload-label">'+
+      '<span>+ Upload file</span>'+
+      '<input type="file" style="display:none;" onchange="handleDocRecordFileUpload(event)">'+
+      '</label>';
+  }
+
+  document.getElementById('drawer').innerHTML =
+    '<div class="drawer-head"><div class="row">'+
+    '<div><h2>'+escapeHtml(d.title||d.type)+'</h2><span class="id-tag">'+escapeHtml(d.type||'Document')+'</span></div>'+
+    '<div style="display:flex; align-items:center; gap:8px;">'+
+    '<button class="btn btn-sm btn-primary" onclick="saveDocRecordNow(event)">Save changes</button>'+
+    '<button class="close-x" onclick="closeDocRecordDrawer()" style="width:auto; padding:6px 12px; font-size:13px;">Close</button>'+
+    '</div></div></div>'+
+    '<div class="drawer-body">'+
+
+    '<div class="drawer-section">'+
+    '<h4>Document details</h4>'+
+    '<div class="field-row">'+
+    '<div class="field"><label>Type</label><select id="dd-type" onchange="updateDocRecordField(\'type\', this.value)">'+typeOptions+'</select></div>'+
+    '<div class="field"><label>Placement</label><select id="dd-corridor" onchange="updateDocRecordField(\'corridor\', this.value)">'+corridorOptions+'</select></div>'+
+    '</div>'+
+    '<div class="field"><label>Title / reference</label><input id="dd-title" value="'+escapeAttr(d.title||'')+'" onchange="updateDocRecordField(\'title\', this.value)"></div>'+
+    '<div class="field-row">'+
+    '<div class="field"><label>Issue date</label><input id="dd-issue" type="date" value="'+escapeAttr(d.issueDate||'')+'" onchange="updateDocRecordField(\'issueDate\', this.value)"></div>'+
+    '<div class="field"><label>Expiry date</label><input id="dd-expiry" type="date" value="'+escapeAttr(d.expiryDate||'')+'" onchange="updateDocRecordField(\'expiryDate\', this.value)"></div>'+
+    '</div>'+
+    '<div class="file-hint">Documents with an expiry date show up under Upcoming document expirations on the Dashboard.</div>'+
+    '</div>'+
+
+    '<div class="drawer-section">'+
+    '<h4>File</h4>'+
+    fileControl+
+    '<div class="file-hint">Max. around 4 MB. Visible to the whole team.</div>'+
+    '</div>'+
+
+    '<div class="drawer-section">'+
+    '<button class="btn btn-danger" onclick="deleteDocRecord()">Delete document</button>'+
     '</div>'+
 
     '</div>';
