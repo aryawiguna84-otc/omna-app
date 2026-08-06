@@ -396,8 +396,8 @@
       <div class="nav-item" data-view="monitor-candidates" onclick="setView('monitor-candidates')">
         <span>Candidates</span>
       </div>
-      <div class="nav-item" data-view="monitor-partners" onclick="setView('monitor-partners')">
-        <span>Partners</span>
+      <div class="nav-item" data-view="monitor-documents" onclick="setView('monitor-documents')">
+        <span>Documents</span>
       </div>
     </div>
     <div class="nav-section">
@@ -572,6 +572,7 @@ let state = {
   filterCorridor: '',
   filterStage: '',
   filterStatus: '',
+  filterPosition: '',
   search: '',
   activeCandidateId: null,
   activeFiles: [],
@@ -821,6 +822,7 @@ function setView(v, corridor){
   state.filterCorridor = corridor || '';
   state.filterStage = '';
   state.filterStatus = '';
+  state.filterPosition = '';
   render();
 }
 function onGlobalSearch(){
@@ -839,7 +841,7 @@ function render(){
     state.view === 'documents' ? 'Documents' :
     state.view === 'analytics' ? 'Analytics' :
     state.view === 'monitor-candidates' ? 'Monitoring — Candidates' :
-    state.view === 'monitor-partners' ? 'Monitoring — Partners' :
+    state.view === 'monitor-documents' ? 'Monitoring — Documents' :
     state.filterCorridor ? 'Placement — ' + state.filterCorridor : 'All candidates';
   const banner = (state.showImportBanner ? renderImportBanner() : '') + (state.showImportBanner2025 ? renderImportBanner2025() : '');
   if(state.view === 'dashboard') el.innerHTML = banner + renderDashboard();
@@ -848,17 +850,17 @@ function render(){
   else if(state.view === 'documents') el.innerHTML = renderDocumentsTable();
   else if(state.view === 'analytics') el.innerHTML = renderAnalytics();
   else if(state.view === 'monitor-candidates') el.innerHTML = renderMonitorCandidates();
-  else if(state.view === 'monitor-partners') el.innerHTML = renderMonitorPartners();
+  else if(state.view === 'monitor-documents') el.innerHTML = renderMonitorDocuments();
   else if(state.filterCorridor) el.innerHTML = banner + renderDashboard(state.filterCorridor) + renderTable();
   else el.innerHTML = banner + renderTable();
   const btnImport = document.getElementById('btn-import');
   const btnExport = document.getElementById('btn-export');
   const btnNew = document.getElementById('btn-new-primary');
-  const noToolbarView = (state.view === 'partners' || state.view === 'documents' || state.view === 'analytics' || state.view === 'monitor-candidates' || state.view === 'monitor-partners');
+  const noToolbarView = (state.view === 'partners' || state.view === 'documents' || state.view === 'analytics' || state.view === 'monitor-candidates' || state.view === 'monitor-documents');
   if(btnImport) btnImport.style.display = noToolbarView ? 'none' : '';
   if(btnExport) btnExport.style.display = noToolbarView ? 'none' : '';
   if(btnNew){
-    if(state.view === 'analytics' || state.view === 'monitor-candidates' || state.view === 'monitor-partners'){ btnNew.style.display = 'none'; }
+    if(state.view === 'analytics' || state.view === 'monitor-candidates' || state.view === 'monitor-documents'){ btnNew.style.display = 'none'; }
     else if(state.view === 'partners'){ btnNew.style.display = ''; btnNew.textContent = '+ New partner'; btnNew.onclick = openAddPartner; }
     else if(state.view === 'documents'){ btnNew.style.display = ''; btnNew.textContent = '+ New document'; btnNew.onclick = openAddDocRecord; }
     else { btnNew.style.display = ''; btnNew.textContent = '+ New candidate'; btnNew.onclick = openAddCandidate; }
@@ -1057,6 +1059,7 @@ function renderTable(){
   if(state.filterCorridor) list = list.filter(c=>c.corridor===state.filterCorridor);
   if(state.filterStage) list = list.filter(c=>c.stage===state.filterStage);
   if(state.filterStatus) list = list.filter(c=>(c.candidateStatus||'')===state.filterStatus);
+  if(state.filterPosition) list = list.filter(c=>((c.customValues&&c.customValues.cf_position)||'')===state.filterPosition);
   if(state.search) list = list.filter(c=>c.name.toLowerCase().includes(state.search));
   list.sort((a,b)=> b.seq - a.seq);
 
@@ -1070,6 +1073,12 @@ function renderTable(){
     '<option value="New Hire"'+(state.filterStatus==='New Hire'?' selected':'')+'>New Hire</option>'+
     '<option value="Repeater"'+(state.filterStatus==='Repeater'?' selected':'')+'>Repeater</option>'+
     '<option value="Resign"'+(state.filterStatus==='Resign'?' selected':'')+'>Resign</option>';
+  const positionValues = Array.from(new Set(
+    state.candidates.map(c=>(c.customValues&&c.customValues.cf_position)||'').filter(v=>v)
+  )).sort();
+  const positionOptions = ['<option value="">All positions</option>'].concat(
+    positionValues.map(v=>'<option value="'+escapeAttr(v)+'"'+(state.filterPosition===v?' selected':'')+'>'+escapeHtml(v)+'</option>')
+  ).join('');
 
   let rows;
   if(list.length===0){
@@ -1104,6 +1113,7 @@ function renderTable(){
     '<select onchange="state.filterCorridor=this.value; render();">'+corridorOptions+'</select>'+
     '<select onchange="state.filterStage=this.value; render();">'+stageOptions+'</select>'+
     '<select onchange="state.filterStatus=this.value; render();">'+statusOptions+'</select>'+
+    '<select onchange="state.filterPosition=this.value; render();">'+positionOptions+'</select>'+
     '</div>'+
     '<div class="panel"><table><thead><tr>'+
     '<th>ID</th><th>Name</th><th>Placement</th><th>Stage</th><th>Status</th><th>Phone</th><th>Nearest expiration</th>'+
@@ -1281,28 +1291,26 @@ function renderMonitorCandidates(){
   return '<div class="eyebrow">Read-only tracking list — updates automatically when candidate data changes</div>'+
     '<div class="panel" style="overflow-x:auto;"><table><thead>'+headHtml+'</thead><tbody>'+rowsHtml+'</tbody></table></div>';
 }
-function renderMonitorPartners(){
-  const list = state.partners.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-  const headers = ['Company / Agent','Type','Contact person','Phone','Email','Address','Placement','Agreements','Created'];
+function renderMonitorDocuments(){
+  const list = state.documents.slice().sort((a,b)=>{
+    if(!a.expiryDate) return 1;
+    if(!b.expiryDate) return -1;
+    return a.expiryDate.localeCompare(b.expiryDate);
+  });
+  const headers = ['Title','Type','Placement','Issue date','Expiry date','File attached','Created'];
   const headHtml = '<tr>'+headers.map(h=>'<th>'+escapeHtml(h)+'</th>').join('')+'</tr>';
   let rowsHtml;
   if(list.length === 0){
-    rowsHtml = '<tr><td colspan="'+headers.length+'"><div class="empty-row">No partners yet.</div></td></tr>';
+    rowsHtml = '<tr><td colspan="'+headers.length+'"><div class="empty-row">No documents yet.</div></td></tr>';
   } else {
-    rowsHtml = list.map(p=>{
-      const agreementsSummary = (p.agreements||[]).map(a=>{
-        let s = a.title||'Agreement';
-        if(a.signedDate) s += ' (signed '+a.signedDate+')';
-        if(a.expiryDate) s += ' (expires '+a.expiryDate+')';
-        return s;
-      }).join('; ') || '—';
+    rowsHtml = list.map(d=>{
       const cells = [
-        p.name, p.partnerType||'—', p.contactPerson||'—', p.phone||'—', p.email||'—', p.address||'—', p.corridor||'—', agreementsSummary, p.createdAt||'—'
+        d.title||d.type||'—', d.type||'—', d.corridor||'—', d.issueDate||'—', d.expiryDate||'—', d.fileId ? 'Yes' : 'No', d.createdAt||'—'
       ];
       return '<tr>'+cells.map(v=>'<td style="white-space:nowrap;">'+escapeHtml(v)+'</td>').join('')+'</tr>';
     }).join('');
   }
-  return '<div class="eyebrow">Read-only tracking list — updates automatically when partner data changes</div>'+
+  return '<div class="eyebrow">Read-only tracking list — updates automatically when document data changes</div>'+
     '<div class="panel" style="overflow-x:auto;"><table><thead>'+headHtml+'</thead><tbody>'+rowsHtml+'</tbody></table></div>';
 }
 function escapeHtml(s){
