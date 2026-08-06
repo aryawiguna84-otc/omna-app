@@ -1262,11 +1262,34 @@ function renderMonitorCandidates(){
     'NIK','Father Name','Mother Name','Weight (kg)','Height (cm)'
   ].concat(otherFields.map(f=>f.label)).concat(['Documents','Payments','Latest Note','Created At']);
 
-  const list = state.candidates.slice().sort((a,b)=>b.seq-a.seq);
+  let list = state.candidates.slice();
+  if(state.filterCorridor) list = list.filter(c=>c.corridor===state.filterCorridor);
+  if(state.filterStage) list = list.filter(c=>c.stage===state.filterStage);
+  if(state.filterStatus) list = list.filter(c=>(c.candidateStatus||'')===state.filterStatus);
+  if(state.filterPosition) list = list.filter(c=>((c.customValues&&c.customValues.cf_position)||'')===state.filterPosition);
+  list.sort((a,b)=>b.seq-a.seq);
+
+  const corridorOptions = ['<option value="">All placements</option>'].concat(
+    state.corridors.map(c=>'<option value="'+escapeAttr(c)+'"'+(state.filterCorridor===c?' selected':'')+'>'+c+'</option>')
+  ).join('');
+  const stageOptions = ['<option value="">All stages</option>'].concat(
+    state.stages.map(s=>'<option value="'+escapeAttr(s)+'"'+(state.filterStage===s?' selected':'')+'>'+s+'</option>')
+  ).join('');
+  const statusOptions = '<option value="">All statuses</option>'+
+    '<option value="New Hire"'+(state.filterStatus==='New Hire'?' selected':'')+'>New Hire</option>'+
+    '<option value="Repeater"'+(state.filterStatus==='Repeater'?' selected':'')+'>Repeater</option>'+
+    '<option value="Resign"'+(state.filterStatus==='Resign'?' selected':'')+'>Resign</option>';
+  const positionValues = Array.from(new Set(
+    state.candidates.map(c=>(c.customValues&&c.customValues.cf_position)||'').filter(v=>v)
+  )).sort();
+  const positionOptions = ['<option value="">All positions</option>'].concat(
+    positionValues.map(v=>'<option value="'+escapeAttr(v)+'"'+(state.filterPosition===v?' selected':'')+'>'+escapeHtml(v)+'</option>')
+  ).join('');
+
   const headHtml = '<tr>'+headers.map(h=>'<th>'+escapeHtml(h)+'</th>').join('')+'</tr>';
   let rowsHtml;
   if(list.length === 0){
-    rowsHtml = '<tr><td colspan="'+headers.length+'"><div class="empty-row">No candidates yet.</div></td></tr>';
+    rowsHtml = '<tr><td colspan="'+headers.length+'"><div class="empty-row">No matching candidates.</div></td></tr>';
   } else {
     rowsHtml = list.map(c=>{
       const docsSummary = (c.documents||[]).map(d=>d.name+':'+(d.done?'done':'pending')+(d.deadline?(' ('+d.deadline+')'):'')).join('; ') || '—';
@@ -1289,19 +1312,34 @@ function renderMonitorCandidates(){
     }).join('');
   }
   return '<div class="eyebrow">Read-only tracking list — updates automatically when candidate data changes</div>'+
+    '<div class="filters">'+
+    '<select onchange="state.filterCorridor=this.value; render();">'+corridorOptions+'</select>'+
+    '<select onchange="state.filterStage=this.value; render();">'+stageOptions+'</select>'+
+    '<select onchange="state.filterStatus=this.value; render();">'+statusOptions+'</select>'+
+    '<select onchange="state.filterPosition=this.value; render();">'+positionOptions+'</select>'+
+    '</div>'+
     '<div class="panel" style="overflow-x:auto;"><table><thead>'+headHtml+'</thead><tbody>'+rowsHtml+'</tbody></table></div>';
 }
 function renderMonitorDocuments(){
-  const list = state.documents.slice().sort((a,b)=>{
+  let list = state.documents.slice();
+  if(state.filterDocumentType) list = list.filter(d=>d.type===state.filterDocumentType);
+  if(state.filterCorridor) list = list.filter(d=>(d.corridor||'')===state.filterCorridor);
+  list.sort((a,b)=>{
     if(!a.expiryDate) return 1;
     if(!b.expiryDate) return -1;
     return a.expiryDate.localeCompare(b.expiryDate);
   });
+  const typeOptions = ['<option value="">All types</option>'].concat(
+    state.documentTypes.map(t=>'<option value="'+escapeAttr(t)+'"'+(state.filterDocumentType===t?' selected':'')+'>'+t+'</option>')
+  ).join('');
+  const corridorOptionsDoc = ['<option value="">All placements</option>'].concat(
+    state.corridors.map(c=>'<option value="'+escapeAttr(c)+'"'+(state.filterCorridor===c?' selected':'')+'>'+c+'</option>')
+  ).join('');
   const headers = ['Title','Type','Placement','Issue date','Expiry date','File attached','Created'];
   const headHtml = '<tr>'+headers.map(h=>'<th>'+escapeHtml(h)+'</th>').join('')+'</tr>';
   let rowsHtml;
   if(list.length === 0){
-    rowsHtml = '<tr><td colspan="'+headers.length+'"><div class="empty-row">No documents yet.</div></td></tr>';
+    rowsHtml = '<tr><td colspan="'+headers.length+'"><div class="empty-row">No matching documents.</div></td></tr>';
   } else {
     rowsHtml = list.map(d=>{
       const cells = [
@@ -1311,6 +1349,10 @@ function renderMonitorDocuments(){
     }).join('');
   }
   return '<div class="eyebrow">Read-only tracking list — updates automatically when document data changes</div>'+
+    '<div class="filters">'+
+    '<select onchange="state.filterDocumentType=this.value; render();">'+typeOptions+'</select>'+
+    '<select onchange="state.filterCorridor=this.value; render();">'+corridorOptionsDoc+'</select>'+
+    '</div>'+
     '<div class="panel" style="overflow-x:auto;"><table><thead>'+headHtml+'</thead><tbody>'+rowsHtml+'</tbody></table></div>';
 }
 function escapeHtml(s){
