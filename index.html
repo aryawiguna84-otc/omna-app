@@ -392,6 +392,15 @@
       </div>
     </div>
     <div class="nav-section">
+      <div class="nav-label">Monitoring</div>
+      <div class="nav-item" data-view="monitor-candidates" onclick="setView('monitor-candidates')">
+        <span>Candidates</span>
+      </div>
+      <div class="nav-item" data-view="monitor-partners" onclick="setView('monitor-partners')">
+        <span>Partners</span>
+      </div>
+    </div>
+    <div class="nav-section">
       <div class="nav-item" data-view="settings" onclick="setView('settings')">
         <span>⚙ Settings</span>
       </div>
@@ -829,6 +838,8 @@ function render(){
     state.view === 'partners' ? 'Partners' :
     state.view === 'documents' ? 'Documents' :
     state.view === 'analytics' ? 'Analytics' :
+    state.view === 'monitor-candidates' ? 'Monitoring — Candidates' :
+    state.view === 'monitor-partners' ? 'Monitoring — Partners' :
     state.filterCorridor ? 'Placement — ' + state.filterCorridor : 'All candidates';
   const banner = (state.showImportBanner ? renderImportBanner() : '') + (state.showImportBanner2025 ? renderImportBanner2025() : '');
   if(state.view === 'dashboard') el.innerHTML = banner + renderDashboard();
@@ -836,16 +847,18 @@ function render(){
   else if(state.view === 'partners') el.innerHTML = renderPartnersTable();
   else if(state.view === 'documents') el.innerHTML = renderDocumentsTable();
   else if(state.view === 'analytics') el.innerHTML = renderAnalytics();
+  else if(state.view === 'monitor-candidates') el.innerHTML = renderMonitorCandidates();
+  else if(state.view === 'monitor-partners') el.innerHTML = renderMonitorPartners();
   else if(state.filterCorridor) el.innerHTML = banner + renderDashboard(state.filterCorridor) + renderTable();
   else el.innerHTML = banner + renderTable();
   const btnImport = document.getElementById('btn-import');
   const btnExport = document.getElementById('btn-export');
   const btnNew = document.getElementById('btn-new-primary');
-  const dataView = (state.view === 'partners' || state.view === 'documents' || state.view === 'analytics');
-  if(btnImport) btnImport.style.display = dataView ? 'none' : '';
-  if(btnExport) btnExport.style.display = dataView ? 'none' : '';
+  const noToolbarView = (state.view === 'partners' || state.view === 'documents' || state.view === 'analytics' || state.view === 'monitor-candidates' || state.view === 'monitor-partners');
+  if(btnImport) btnImport.style.display = noToolbarView ? 'none' : '';
+  if(btnExport) btnExport.style.display = noToolbarView ? 'none' : '';
   if(btnNew){
-    if(state.view === 'analytics'){ btnNew.style.display = 'none'; }
+    if(state.view === 'analytics' || state.view === 'monitor-candidates' || state.view === 'monitor-partners'){ btnNew.style.display = 'none'; }
     else if(state.view === 'partners'){ btnNew.style.display = ''; btnNew.textContent = '+ New partner'; btnNew.onclick = openAddPartner; }
     else if(state.view === 'documents'){ btnNew.style.display = ''; btnNew.textContent = '+ New document'; btnNew.onclick = openAddDocRecord; }
     else { btnNew.style.display = ''; btnNew.textContent = '+ New candidate'; btnNew.onclick = openAddCandidate; }
@@ -1221,6 +1234,76 @@ function renderAnalytics(){
     '<div class="panel" style="margin-top:16px;"><div class="panel-head"><h3>New candidates per month</h3></div><div class="panel-body" style="padding:14px 18px;">'+monthHtml+
     '<div class="file-hint" style="margin-top:8px;">Based on when each candidate was added to the system — not on actual placement completion dates, since those aren\'t tracked yet.</div>'+
     '</div></div>';
+}
+function renderMonitorCandidates(){
+  const knownIds = NEW_CUSTOM_FIELDS_2025.map(f=>f.id);
+  const cv = (c,id) => (c.customValues && c.customValues[id]) || '';
+  const otherFields = state.customFields.filter(f=>knownIds.indexOf(f.id) === -1);
+
+  const headers = [
+    'ID','Name','Placement','Stage','Status',
+    'Position','Company / Hotel','Agency','Age',
+    'Phone','Email','Gender','Address','Last education','Marital status','Spouse name','Spouse address','Emergency contact',
+    'Place of Birth','Date of Birth',
+    'Passport Number','Passport issue date','Passport Expiry',
+    'Contract','PC & apostille','Working permit','Medical date','Medical status',
+    'Apply visa','Visa status','On visa','Visa expired date','KTKLN','Ticket',
+    'Departure airport','Flight date','Join date','Return date','Remark',
+    'NIK','Father Name','Mother Name','Weight (kg)','Height (cm)'
+  ].concat(otherFields.map(f=>f.label)).concat(['Documents','Payments','Latest Note','Created At']);
+
+  const list = state.candidates.slice().sort((a,b)=>b.seq-a.seq);
+  const headHtml = '<tr>'+headers.map(h=>'<th>'+escapeHtml(h)+'</th>').join('')+'</tr>';
+  let rowsHtml;
+  if(list.length === 0){
+    rowsHtml = '<tr><td colspan="'+headers.length+'"><div class="empty-row">No candidates yet.</div></td></tr>';
+  } else {
+    rowsHtml = list.map(c=>{
+      const docsSummary = (c.documents||[]).map(d=>d.name+':'+(d.done?'done':'pending')+(d.deadline?(' ('+d.deadline+')'):'')).join('; ') || '—';
+      const paysSummary = (c.payments||[]).map(p=>p.desc+':'+p.status+' Rp'+(p.amount||0)).join('; ') || '—';
+      const latestNote = (c.notes && c.notes.length) ? c.notes[c.notes.length-1].text : '—';
+      const cells = [
+        candidateIdLabel(c), c.name, c.corridor, c.stage, c.candidateStatus||'—',
+        cv(c,'cf_position'), cv(c,'cf_company'), cv(c,'cf_agency'), cv(c,'cf_age'),
+        c.phone||'—', c.email||'—', c.gender||'—', cv(c,'cf_address'), cv(c,'cf_education'), cv(c,'cf_maritalStatus'), cv(c,'cf_spouseName'), cv(c,'cf_spouseAddress'), cv(c,'cf_emergencyContact'),
+        c.birthPlace||'—', c.birthDate||'—',
+        c.passportNumber||'—', cv(c,'cf_issueDate'), c.passportExpiry||'—',
+        cv(c,'cf_contract'), cv(c,'cf_pcApostille'), cv(c,'cf_workingPermit'), cv(c,'cf_medicalDate'), cv(c,'cf_statusMedical'),
+        cv(c,'cf_applyVisa'), cv(c,'cf_statusVisa'), cv(c,'cf_onVisa'), cv(c,'cf_visaExpiredDate'), cv(c,'cf_ktkln'), cv(c,'cf_ticket'),
+        cv(c,'cf_departureAirport'), cv(c,'cf_flightDate'), cv(c,'cf_joinDate'), cv(c,'cf_returnDate'), cv(c,'cf_remark'),
+        c.nik||'—', c.fatherName||'—', c.motherName||'—', c.weightKg||'—', c.heightCm||'—'
+      ];
+      otherFields.forEach(f=>{ cells.push(cv(c, f.id) || '—'); });
+      cells.push(docsSummary, paysSummary, latestNote, c.createdAt||'—');
+      return '<tr>'+cells.map(v=>'<td style="white-space:nowrap;">'+escapeHtml(v)+'</td>').join('')+'</tr>';
+    }).join('');
+  }
+  return '<div class="eyebrow">Read-only tracking list — updates automatically when candidate data changes</div>'+
+    '<div class="panel" style="overflow-x:auto;"><table><thead>'+headHtml+'</thead><tbody>'+rowsHtml+'</tbody></table></div>';
+}
+function renderMonitorPartners(){
+  const list = state.partners.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  const headers = ['Company / Agent','Type','Contact person','Phone','Email','Address','Placement','Agreements','Created'];
+  const headHtml = '<tr>'+headers.map(h=>'<th>'+escapeHtml(h)+'</th>').join('')+'</tr>';
+  let rowsHtml;
+  if(list.length === 0){
+    rowsHtml = '<tr><td colspan="'+headers.length+'"><div class="empty-row">No partners yet.</div></td></tr>';
+  } else {
+    rowsHtml = list.map(p=>{
+      const agreementsSummary = (p.agreements||[]).map(a=>{
+        let s = a.title||'Agreement';
+        if(a.signedDate) s += ' (signed '+a.signedDate+')';
+        if(a.expiryDate) s += ' (expires '+a.expiryDate+')';
+        return s;
+      }).join('; ') || '—';
+      const cells = [
+        p.name, p.partnerType||'—', p.contactPerson||'—', p.phone||'—', p.email||'—', p.address||'—', p.corridor||'—', agreementsSummary, p.createdAt||'—'
+      ];
+      return '<tr>'+cells.map(v=>'<td style="white-space:nowrap;">'+escapeHtml(v)+'</td>').join('')+'</tr>';
+    }).join('');
+  }
+  return '<div class="eyebrow">Read-only tracking list — updates automatically when partner data changes</div>'+
+    '<div class="panel" style="overflow-x:auto;"><table><thead>'+headHtml+'</thead><tbody>'+rowsHtml+'</tbody></table></div>';
 }
 function escapeHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
